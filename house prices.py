@@ -106,21 +106,25 @@ def create_model(neurons=10):
     
     return model
 
-def create_model2():    
-    dropout = 0.01
+# 金字塔型
+def create_model_pyramid(layers, dropout):
     
-    model = Sequential()    
-    model.add(Dense(input_dim=p, output_dim=16))
-    model.add(Activation('relu'))
-    model.add(Dropout(dropout))
+    model = Sequential()
     
-    model.add(Dense(output_dim=16))
-    model.add(Activation('relu'))
-    model.add(Dropout(dropout))
+    if layers > 0:        
+        model.add(Dense(input_dim=p, output_dim=p*3))
+        model.add(Activation('relu'))
+        model.add(Dropout(dropout))
     
-    model.add(Dense(output_dim=16))
-    model.add(Activation('relu'))
-    model.add(Dropout(dropout))
+    if layers > 1:    
+        model.add(Dense(output_dim=p*2))
+        model.add(Activation('relu'))
+        model.add(Dropout(dropout))
+
+    if layers > 2:
+        model.add(Dense(output_dim=p))
+        model.add(Activation('relu'))
+        model.add(Dropout(dropout))
     
     model.add(Dense(output_dim=1))
     model.add(Activation('relu'))
@@ -139,20 +143,30 @@ rmses = np.sqrt(grid_result.cv_results_['mean_test_score'])
 params = grid_result.cv_results_['params']
 for rmse, param in zip(rmses, params):
     print "%f with: %r" % (rmse, param)
-  
+
+from keras.callbacks import ModelCheckpoint
+filepath="weights.best.hdf5"
+checkpoint = ModelCheckpoint(filepath, monitor='val_loss', verbose=1, save_best_only=True, mode='min')
+
 # model 1
-model = create_model(10)
+neurons = 128
+model = create_model_pyramid(3, neurons, 0)
+#model.load_weights("weights.best.hdf5")
 history = LossHistory()
-hist = model.fit(x_train, y_train, nb_epoch=600, batch_size=10, validation_split=0.2, callbacks=[history], verbose=0)
+hist = model.fit(x_train, y_train, nb_epoch=500, batch_size=10, validation_split=0.2, callbacks=[history, checkpoint], verbose=2)
+str1 = ' loss = %.6f' % (float(history.losses[len(history.losses)-1]))
+str2 = ' val loss = %.6f' % (float(history.val_losses[len(history.val_losses)-1]))
+#plt.title('dropout 0.1, 3 hidden ' + str(neurons) +  ' neurons ' + str1 + str2)
+plt.title('dropout 0.1, 1st hidden 384, 2nd hidden 256, 3rd 128 ' + str1 + str2)
 plt.plot(history.losses)
 plt.plot(history.val_losses)
 plt.ylim([0, 0.5])
 plt.show()
 
 # model 2
-model = create_model2()
+model = create_model2(1, 2, 0)
 history = LossHistory()
-hist = model.fit(x_train, y_train, nb_epoch=1200, batch_size=10, validation_split=0.2, callbacks=[history], verbose=0)
+hist = model.fit(x_train, y_train, nb_epoch=300, batch_size=10, validation_split=0.2, callbacks=[history], verbose=0)
 plt.plot(history.losses)
 plt.plot(history.val_losses)
 plt.ylim([0, 0.5])
