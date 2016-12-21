@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import skew
 from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler
 
 train  = pd.read_csv("./house prices/train.csv")
 test = pd.read_csv("./house prices/test.csv")
@@ -50,7 +51,7 @@ def rmse_cv(X, y):
     rmse_list = []
     alphas = []
     for alpha in np.arange(-6, 1):    
-        rmse = np.sqrt(-cross_val_score(Lasso(alpha=10**alpha), X, y, scoring="neg_mean_squared_error", cv = 5))
+        rmse = np.sqrt(-cross_val_score(Lasso(alpha=10**alpha), X, y, scoring="neg_mean_squared_error", cv = 10))
         print 'alpha = %f, rmse = %f' % (10**alpha, rmse.mean())    
         alphas.append(10**alpha)
         rmse_list.append(rmse.mean())
@@ -60,21 +61,21 @@ rmse, alphas = rmse_cv(X, y)
 
 cv_lasso = pd.Series(rmse, index=alphas)
 cv_lasso.plot(logx=True)
+# bset alpha = 0.001000, rmse = 0.122480
 
-# 用內建的function
-model_lasso_cv = LassoCV(alphas=alphas)
-model_lasso_cv.fit(X, y)
-model_lasso_cv.score(X, y)
-
-# Lasso(alpha=0.001) 
-# alpha = 0.001000, rmse = 0.123366
-# public score = 0.15588
+# =============================================================================
+# 確定cross-validation驗證完model後，把全部的X再拿進去train一次
+model_lasso = Lasso(0.001)
+model_lasso.fit(X, y)
+#lasso model
+#cv_10, alpha = 0.001000, rmse = 0.122480
+#public score = 0.12198
 
 # =============================================================================
 # NN
 from keras.callbacks import Callback, EarlyStopping
 from keras.models import Sequential
-from keras.layers import Dense, Activation, Dropout
+from keras.layers import Dense, Activation, Dropout,  MaxoutDense
 from keras.regularizers import l1, l2
 from keras.wrappers.scikit_learn import KerasRegressor
 from sklearn.model_selection import GridSearchCV
@@ -85,96 +86,86 @@ class LossHistory(Callback):
         self.val_losses = []
     def on_epoch_end(self, batch, logs={}):
         self.losses.append(np.sqrt(logs.get('loss')))
-        self.val_losses.append(np.sqrt(logs.get('val_loss')))
-        print 'rmse loss = %f, val_loss = %f' % (np.sqrt(logs.get('loss')), np.sqrt(logs.get('val_loss')))       
-        #print 'rmse loss = %f' % (np.sqrt(logs.get('loss')))
         
+        if logs.get('val_loss') == None:
+            #print 'rmse loss = %f' % (np.sqrt(logs.get('loss')))
+            pass             
+        else:
+            self.val_losses.append(np.sqrt(logs.get('val_loss')))
+            #print 'rmse loss = %f, val_loss = %f' % (np.sqrt(logs.get('loss')), np.sqrt(logs.get('val_loss')))
+            
 p = X.shape[1]
 x_train = X.values
 y_train = y.values
 
 # train到下不去了，再去想Regularization, Dropout, Early Stopping等工具
-def create_model(neurons=10):        
+def nn_model(neurons=10):        
+    
+    print 'model: p->10->1'
+    
     model = Sequential() 
-    model.add(Dense(input_dim=p, output_dim=neurons))
-    model.add(Activation('relu'))    
+    
+    model.add(Dense(neurons, input_dim=p, activation='relu', name='1st hidden layer'))    
         
-    model.add(Dense(output_dim=1))
-    model.add(Activation('relu'))
+    model.add(Dense(1, activation='relu', name='output'))
     
     model.compile(loss='mean_squared_error', optimizer='adam')
     
     return model
 
-# 金字塔型
-def create_model_pyramid(layers, dropout):
-    
-    model = Sequential()
-    
-    if layers > 0:        
-        model.add(Dense(input_dim=p, output_dim=p*3))
-        model.add(Activation('relu'))
-        model.add(Dropout(dropout))
-    
-    if layers > 1:    
-        model.add(Dense(output_dim=p*2))
-        model.add(Activation('relu'))
-        model.add(Dropout(dropout))
+# =============================================================================
+# GridSearchCV
+#neurons = [10, 50, 100]
+#param_grid = dict(neurons=neurons)
+#model = KerasRegressor(build_fn=create_model, nb_epoch=100, batch_size=10, validation_split=0.2, verbose=0)
+#grid = GridSearchCV(estimator=model, param_grid=param_grid)
+#grid_result = grid.fit(x_train, y_train)
 
-    if layers > 2:
-        model.add(Dense(output_dim=p))
-        model.add(Activation('relu'))
-        model.add(Dropout(dropout))
-    
-    model.add(Dense(output_dim=1))
-    model.add(Activation('relu'))
-    
-    model.compile(loss='mean_squared_error', optimizer='adam')
-    
-    return model
-    
-neurons = [10, 50, 100]
-param_grid = dict(neurons=neurons)
-model = KerasRegressor(build_fn=create_model, nb_epoch=100, batch_size=10, validation_split=0.2, verbose=0)
-grid = GridSearchCV(estimator=model, param_grid=param_grid)
-grid_result = grid.fit(x_train, y_train)
+#rmses = np.sqrt(grid_result.cv_results_['mean_test_score'])
+#params = grid_result.cv_results_['params']
+#for rmse, param in zip(rmses, params):
+    #print "%f with: %r" % (rmse, param)
 
-rmses = np.sqrt(grid_result.cv_results_['mean_test_score'])
-params = grid_result.cv_results_['params']
-for rmse, param in zip(rmses, params):
-    print "%f with: %r" % (rmse, param)
-
-from keras.callbacks import ModelCheckpoint
-filepath="weights.best.hdf5"
-checkpoint = ModelCheckpoint(filepath, monitor='val_loss', verbose=1, save_best_only=True, mode='min')
+# =============================================================================
+# ModelCheckpoint
+#from keras.callbacks import ModelCheckpoint
+#filepath="weights.best.hdf5"
+#checkpoint = ModelCheckpoint(filepath, monitor='val_loss', verbose=1, save_best_only=True, mode='min')
 
 # model 1
-neurons = 128
-model = create_model_pyramid(3, neurons, 0)
+neurons = 10
+model = nn_model(neurons)
+#model.summary()
 #model.load_weights("weights.best.hdf5")
 history = LossHistory()
-hist = model.fit(x_train, y_train, nb_epoch=500, batch_size=10, validation_split=0.2, callbacks=[history, checkpoint], verbose=2)
-str1 = ' loss = %.6f' % (float(history.losses[len(history.losses)-1]))
-str2 = ' val loss = %.6f' % (float(history.val_losses[len(history.val_losses)-1]))
-#plt.title('dropout 0.1, 3 hidden ' + str(neurons) +  ' neurons ' + str1 + str2)
-plt.title('dropout 0.1, 1st hidden 384, 2nd hidden 256, 3rd 128 ' + str1 + str2)
-plt.plot(history.losses)
-plt.plot(history.val_losses)
-plt.ylim([0, 0.5])
-plt.show()
+hist = model.fit(x_train, y_train, shuffle=True, nb_epoch=100, batch_size=10, validation_split=0.1, callbacks=[history], verbose=0)
 
-# model 2
-model = create_model2(1, 2, 0)
-history = LossHistory()
-hist = model.fit(x_train, y_train, nb_epoch=300, batch_size=10, validation_split=0.2, callbacks=[history], verbose=0)
+str1 = ' rmse = %.6f' % (float(history.losses[len(history.losses)-1]))
+str2 = ' val rmse = %.6f' % (float(history.val_losses[len(history.val_losses)-1]))
+plt.title(str1 + str2)
 plt.plot(history.losses)
 plt.plot(history.val_losses)
 plt.ylim([0, 0.5])
 plt.show()
 
 # =============================================================================   
+# cross-validation
+estimator = KerasRegressor(build_fn=nn_model, nb_epoch=100, batch_size=10, verbose=0)
+rmse_results = np.sqrt(-cross_val_score(estimator, x_train, y_train, scoring="neg_mean_squared_error", cv=10))
+print "rmse: %.6f" % (rmse_results.mean())
+#nn model
+#cv_10, p - 10 - 1, rmse = 0.160480
+#public score = 0.16617
+
+# =============================================================================
+# 確定cross-validation驗證完model後，把全部的X再拿進去train一次
+model = nn_model(neurons)
+model.fit(x_train, y_train, shuffle=True, nb_epoch=100, batch_size=10, verbose=0)
+
+
+# =============================================================================   
 # output
-lasso_pred = np.expm1(model_lasso_cv.predict(X_test))
+lasso_pred = np.expm1(model_lasso.predict(X_test))
 dnn_pred = np.expm1(model.predict(X_test.values))
 dnn_pred = dnn_pred[:, 0]
 
@@ -182,6 +173,7 @@ df = pd.DataFrame({"lasso_pred":lasso_pred,"dnn_pred":dnn_pred})
 df.plot(x = "lasso_pred", y = "dnn_pred", kind = "scatter")
 
 preds = 0.7*lasso_pred + 0.3*dnn_pred
+#public score = 0.12115
 
 pred_df = pd.DataFrame(preds, index=test["Id"], columns=["SalePrice"])
 pred_df.to_csv('output.csv', header=True, index_label='Id')
