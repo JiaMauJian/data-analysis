@@ -3,7 +3,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import skew
 from sklearn.preprocessing import StandardScaler
-from sklearn.preprocessing import MinMaxScaler
+
+import os
+print os.getcwd()
 
 train  = pd.read_csv("./house prices/train.csv")
 test = pd.read_csv("./house prices/test.csv")
@@ -160,20 +162,83 @@ print "rmse: %.6f" % (rmse_results.mean())
 # =============================================================================
 # 確定cross-validation驗證完model後，把全部的X再拿進去train一次
 model = nn_model(neurons)
-model.fit(x_train, y_train, shuffle=True, nb_epoch=100, batch_size=10, verbose=0)
-
+model.fit(x_train, y_train, shuffle=True, nb_epoch=500, batch_size=10, verbose=0)
 
 # =============================================================================   
-# output
+# 方法1 :用cross validation 找 a
+from sklearn.model_selection import StratifiedKFold
+from sklearn.metrics import mean_squared_error
+
+kf = StratifiedKFold(n_splits=10)
+
+for a in np.arange(0, 0.5, 0.1):
+    
+    kf_rmse = []    
+    for train_index, test_index in kf.split(X):
+        #print("TRAIN:", train_index, "TEST:", test_index)
+        kX_train = X.loc[train_index, :]
+        ky_train = y.loc[train_index]
+        kX_test = X.loc[test_index, :]
+        ky_test = y.loc[test_index]
+        kModel_lasso = Lasso(0.001)
+        kModel_lasso.fit(kX_train, ky_train)
+        lasso_pred = kModel_lasso.predict(kX_test)
+        
+        KModel = nn_model(neurons)
+        KModel.fit(kX_train.values, ky_train.values, shuffle=True, nb_epoch=500, batch_size=10, verbose=0)
+        nn_pred = KModel.predict(kX_test.values)
+        nn_pred = nn_pred[:, 0]
+    
+        pred = (1-a)*lasso_pred + a*nn_pred
+        kf_rmse.append(np.sqrt(mean_squared_error(ky_test, pred)))
+        
+    print 'a=%f, rmse=%f' % (a, np.mean(kf_rmse))
+#a=0.000000, rmse=0.122480
+#a=0.100000, rmse=0.121661
+#a=0.200000, rmse=0.121098 --> best
+#a=0.300000, rmse=0.122300
+#a=0.400000, rmse=0.125252
+
+# =============================================================================   
+# 方法1 : output
 lasso_pred = np.expm1(model_lasso.predict(X_test))
-dnn_pred = np.expm1(model.predict(X_test.values))
-dnn_pred = dnn_pred[:, 0]
+nn_pred = np.expm1(model.predict(X_test.values))
+nn_pred = nn_pred[:, 0]
 
-df = pd.DataFrame({"lasso_pred":lasso_pred,"dnn_pred":dnn_pred})
-df.plot(x = "lasso_pred", y = "dnn_pred", kind = "scatter")
+df = pd.DataFrame({"lasso_pred":lasso_pred,"nn_pred":nn_pred})
+df.plot(x = "lasso_pred", y = "nn_pred", kind = "scatter")
 
-preds = 0.7*lasso_pred + 0.3*dnn_pred
-#public score = 0.12115
+preds = 0.8*lasso_pred + 0.2*nn_pred
 
 pred_df = pd.DataFrame(preds, index=test["Id"], columns=["SalePrice"])
-pred_df.to_csv('output.csv', header=True, index_label='Id')
+pred_df.to_csv('D:/data-analysis/output.csv', header=True, index_label='Id')
+#public score = 0.12048
+
+# =============================================================================   
+# 方法2 :用linear regression 找 a (少了切validation去找a，然後再用validation確認)
+from sklearn.linear_model import LinearRegression
+lasso_pred = model_lasso.predict(X)
+nn_pred = model.predict(X.values)
+nn_pred = nn_pred[:, 0]
+df = pd.DataFrame({"lasso_pred":lasso_pred,"nn_pred":nn_pred})
+print df.corr()
+lr = LinearRegression()
+lr.fit(df, y)
+#lr.coef_
+#array([ 0.10905888,  0.89317036])
+#lr.intercept_
+#-0.046407052933819415
+
+# =============================================================================   
+# 方法2:output
+lasso_pred = model_lasso.predict(X_test)
+nn_pred = model.predict(X_test.values)
+nn_pred = nn_pred[:, 0]
+
+df = pd.DataFrame({"lasso_pred":lasso_pred,"nn_pred":nn_pred})
+df.plot(x = "lasso_pred", y = "nn_pred", kind = "scatter")
+preds = np.expm1(lr.predict(df.values))
+
+pred_df = pd.DataFrame(preds, index=test["Id"], columns=["SalePrice"])
+pred_df.to_csv('D:/data-analysis/output.csv', header=True, index_label='Id')
+#public score = 0.13788
