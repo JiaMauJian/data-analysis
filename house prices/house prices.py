@@ -3,7 +3,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import skew
 from sklearn.preprocessing import StandardScaler
-from sklearn.preprocessing import MinMaxScaler
 
 train  = pd.read_csv("./house prices/train.csv")
 test = pd.read_csv("./house prices/test.csv")
